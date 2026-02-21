@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+joblib
+scikit-learn
+xgboost
+lightgbm
+ta
+onnx
+skl2onnx
+onnxconverter-common
+onnxruntime
