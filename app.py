@@ -12,9 +12,52 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+THIS_FILE = Path(__file__).resolve()
+THIS_DIR = THIS_FILE.parent
+
+
+def _ensure_import_paths() -> Path:
+    """
+    Add robust candidate paths for local and Streamlit Cloud layouts.
+    Returns resolved project root that contains ml_feature_engineering.py.
+    """
+    candidate_dirs = [
+        THIS_DIR,
+        THIS_DIR.parent,
+        THIS_DIR / "impulse_based_intelligence",
+        THIS_DIR.parent / "impulse_based_intelligence",
+        THIS_DIR.parent / "src",
+    ]
+
+    # Also probe one more level up to handle monorepo/app-at-root deployments.
+    for base in [THIS_DIR, THIS_DIR.parent]:
+        try:
+            for p in base.rglob("ml_feature_engineering.py"):
+                candidate_dirs.append(p.parent)
+        except Exception:
+            pass
+
+    unique_candidates = []
+    seen = set()
+    for c in candidate_dirs:
+        key = str(c)
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(c)
+
+    for c in unique_candidates:
+        if c.exists() and str(c) not in sys.path:
+            sys.path.insert(0, str(c))
+
+    for c in unique_candidates:
+        if (c / "ml_feature_engineering.py").exists():
+            return c
+
+    # Fallback: keep previous behavior if no direct hit found.
+    return THIS_FILE.parents[1] if len(THIS_FILE.parents) > 1 else THIS_DIR
+
+
+ROOT_DIR = _ensure_import_paths()
 
 from ml_feature_engineering import AdvancedFeatureEngineer  # noqa: E402
 from ml_models import AdvancedMLModels  # noqa: E402
