@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import subprocess
 import sys
 from datetime import datetime
@@ -59,9 +60,85 @@ def _ensure_import_paths() -> Path:
 
 ROOT_DIR = _ensure_import_paths()
 
-from ml_feature_engineering import AdvancedFeatureEngineer  # noqa: E402
-from ml_models import AdvancedMLModels  # noqa: E402
-from onnx_export_app import export_best_model_to_onnx_isolated  # noqa: E402
+
+def _load_symbol_from_file(module_name: str, file_path: Path, symbol_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create spec for {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not hasattr(module, symbol_name):
+        raise ImportError(f"{symbol_name} not found in {file_path}")
+    return getattr(module, symbol_name)
+
+
+def _resolve_file(filename: str) -> Path | None:
+    candidates = [
+        THIS_DIR / filename,
+        THIS_DIR.parent / filename,
+        ROOT_DIR / filename,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+
+    # Last resort: search around app dir and workspace mount root.
+    for base in [THIS_DIR, THIS_DIR.parent]:
+        try:
+            for p in base.rglob(filename):
+                return p
+        except Exception:
+            pass
+    return None
+
+
+try:
+    from ml_feature_engineering import AdvancedFeatureEngineer  # type: ignore  # noqa: E402
+except Exception:
+    feature_file = _resolve_file("ml_feature_engineering.py")
+    if feature_file is None:
+        st.error(
+            "Missing required file: ml_feature_engineering.py. "
+            "Ensure it is committed to the deployed repository."
+        )
+        st.stop()
+    AdvancedFeatureEngineer = _load_symbol_from_file(
+        "ml_feature_engineering_dynamic",
+        feature_file,
+        "AdvancedFeatureEngineer",
+    )
+
+try:
+    from ml_models import AdvancedMLModels  # type: ignore  # noqa: E402
+except Exception:
+    models_file = _resolve_file("ml_models.py")
+    if models_file is None:
+        st.error(
+            "Missing required file: ml_models.py. "
+            "Ensure it is committed to the deployed repository."
+        )
+        st.stop()
+    AdvancedMLModels = _load_symbol_from_file(
+        "ml_models_dynamic",
+        models_file,
+        "AdvancedMLModels",
+    )
+
+try:
+    from onnx_export_app import export_best_model_to_onnx_isolated  # type: ignore  # noqa: E402
+except Exception:
+    exporter_file = _resolve_file("exporter.py")
+    if exporter_file is None:
+        st.error(
+            "Missing required file: exporter.py. "
+            "Ensure onnx export worker files are included in deployment."
+        )
+        st.stop()
+    export_best_model_to_onnx_isolated = _load_symbol_from_file(
+        "onnx_exporter_dynamic",
+        exporter_file,
+        "export_best_model_to_onnx_isolated",
+    )
 
 # Feature set aligned with current MT5 EA feature mapper (MLIntelligence.mqh).
 MT5_EA_FEATURE_COLUMNS = [
